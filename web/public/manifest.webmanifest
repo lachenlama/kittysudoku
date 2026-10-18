@@ -1,0 +1,13 @@
+{
+  "name": "Kitty Sudoku",
+  "short_name": "Kitty Sudoku",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFF7EE",
+  "theme_color": "#FFF7EE",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
