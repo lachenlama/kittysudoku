@@ -7,14 +7,14 @@ Date: 2026-10-18 · Status: approved design, pending spec review
 A cute, logic-first sudoku where digits are cats. Two players, each on their own phone, solve the **same board live** together. Primary target device: **iPhone 16 (Safari / Home Screen web app)**.
 
 ### Puzzle
-- Sizes: **6×6** (2×3 boxes, 6 cats) for *Kitten* and *Cat* difficulty; **9×9** (3×3 boxes, 9 cats) for *Lion* and *Tiger*.
+- All boards are **9×9** (3×3 boxes, 9 cats). Every level is meant to be genuinely hard for adults.
 - Every puzzle has exactly one solution, verified by the solver at generation time.
-- Difficulty = board size + clue count + highest technique the hint engine needs:
-  - Kitten (6×6): solvable with naked singles only.
-  - Cat (6×6): naked + hidden singles, fewer clues.
-  - Lion (9×9): naked + hidden singles.
-  - Tiger (9×9): minimal clues; may need pairs (generator accepts any uniquely-solvable puzzle with ≤ 26 clues).
-- **Paw notes**: pencil marks shown as tiny cat dots in a 2×3 / 3×3 mini-grid inside the cell.
+- Difficulty is by clue count (generator removes clues in random order, keeping uniqueness, until the target is reached or no more can be removed):
+  - **Lion** (hard): 28 clues.
+  - **Tiger** (expert): 25 clues.
+  - **Panther** (evil): minimal puzzle — remove until no clue can be removed (typically 22–24 clues).
+- Generation must finish < 1.5 s on the server (bitmask backtracking solver that stops at 2 solutions).
+- **Paw notes**: pencil marks shown as tiny cat dots in a 3×3 mini-grid inside the cell.
 - Toggle **"Show numbers"**: overlays the digit on each cat (per-device setting, localStorage).
 
 ### Co-op
@@ -22,7 +22,7 @@ A cute, logic-first sudoku where digits are cats. Two players, each on their own
 - Shared state: givens, placements, notes, lives, hints left, timer start, status.
 - Presence: partner's selected cell shows a glowing rounded outline in their color + tiny name tag; partner online/offline dot in the top bar.
 - **9 shared lives**: server checks each placement against the solution. Wrong → cell shakes, cat shows a hiss face for 600 ms, cell cleared, one life lost (heart pops). 0 lives → "The cats got grumpy" screen with *Try again* (new puzzle, same difficulty).
-- **Wise Cat hints** (3 per puzzle, shared): server finds the easiest deducible cell (naked single, then hidden single) and returns `{cell, value, reason}`. Both phones highlight the cell + speech bubble e.g. "Only 🐱 Mochi fits in this row." The hint is **not** auto-placed; a player must place it. If no single exists (possible on Tiger), the hint reveals the empty cell with the fewest candidates and reason "The Wise Cat just knows… 🔮".
+- **Wise Cat hints** (3 per puzzle, shared): server finds the easiest deducible cell (naked single, then hidden single) and returns `{cell, value, reason}`. Both phones highlight the cell + speech bubble e.g. "Only 🐱 Mochi fits in this row." The hint is **not** auto-placed; a player must place it. If no single exists (common on Tiger/Panther), the hint reveals the empty cell with the fewest candidates and reason "The Wise Cat just knows… 🔮".
 - **Reactions**: 💗 😹 🙀 👏 float up on the partner's screen.
 - **Win**: cats dance (CSS bounce), paw confetti, shows time, lives left, both names. *Play again* → difficulty picker, stays in room.
 - Notes are shared (both see each other's notes) — simpler and more collaborative.
@@ -43,11 +43,11 @@ Accounts, streaks/history, daily puzzle, undo, sound settings, >2 players, persi
 |---|---|---|
 | Safe top | 59 | — |
 | Top bar | 52 | room code chip · timer · 9 hearts (14 px, single row) · partner dot+avatar |
-| Board | 361 | 16 px side gutters → 361 px square. 9×9 cells ≈ 40 px, 6×6 cells ≈ 60 px |
+| Board | 361 | 16 px side gutters → 361 px square. cells ≈ 40 px |
 | Gap | 16 | Wise Cat speech bubble appears here when active |
 | Tool row | 56 | Notes (toggle), Erase, Wise Cat (badge = hints left), React |
 | Gap | 12 | |
-| Cat palette | 136 | 9×9: 5 + 4 buttons, ~64 px; 6×6: 3 × 2 buttons, ~64 px tall wide pills. Badge shows remaining count; finished cats fade out |
+| Cat palette | 136 | 5 + 4 buttons, ~64 px. Badge shows remaining count; finished cats fade out |
 | Safe bottom | 34 | — |
 Total ≈ 726 pt of 852, leaving breathing room; extra space is distributed above the board.
 
@@ -65,7 +65,7 @@ Controls (palette + tools) sit in the bottom thumb zone; the board is mid-screen
 - Font: **Nunito** (Google Fonts, rounded), weights 600/800.
 - Light palette: background cream `#FFF7EE`, board `#FFFFFF`, box borders `#E8D5C4`, ink `#4A3A35`, accent peach `#FF9F80`, lavender `#B9A7F5`. Dark mode (`prefers-color-scheme: dark`): background `#1E1A24`, board `#2A2433`, ink `#F3E9E2`, same accents slightly desaturated. Colors as CSS custom properties on `:root`.
 - Board: rounded 20 px corners, soft shadow, thicker box lines (2 px) vs cell lines (1 px).
-- **9 cats as inline SVG faces**, each distinct by color **and** a shape cue (colorblind-safe): 1 Mochi (white, blue eyes), 2 Biscuit (ginger, stripes), 3 Oreo (tuxedo), 4 Patches (calico), 5 Smokey (grey, bow), 6 Luna (black, green eyes), 7 Tofu (siamese mask), 8 Tiger (tabby "M"), 9 Peach (orange, heart nose). 6×6 uses cats 1–6.
+- **9 cats as inline SVG faces**, each distinct by color **and** a shape cue (colorblind-safe): 1 Mochi (white, blue eyes), 2 Biscuit (ginger, stripes), 3 Oreo (tuxedo), 4 Patches (calico), 5 Smokey (grey, bow), 6 Luna (black, green eyes), 7 Tofu (siamese mask), 8 Tiger (tabby "M"), 9 Peach (orange, heart nose). 
 
 ## 3. Architecture
 
@@ -92,7 +92,7 @@ Server → client:
 - Validation: server ignores moves on givens, out-of-range values, or when status ≠ playing. Third player joining a full room gets `error`.
 
 ## 4. Testing
-- `shared/sudoku.test.ts` (node:test via tsx): generated puzzles for each difficulty have exactly one solution; the solution satisfies all constraints; hints returned match the solution; Kitten puzzles solve with singles only.
+- `shared/sudoku.test.ts` (node:test via tsx): generated puzzles for each difficulty have exactly one solution; the solution satisfies all constraints; hints returned match the solution; generation per difficulty completes under 1.5 s and hits the clue target.
 - Manual: two phones (or one phone + desktop Safari responsive mode at 393×852) — create/join, live placements, wrong move, hint, reaction, win, airplane-mode reconnect.
 
 ## 5. Deploy
