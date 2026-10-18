@@ -3,15 +3,15 @@
 export type Difficulty = 'lion' | 'tiger' | 'panther'
 
 export const CATS = [
-  { id: 1, name: 'Mochi', color: '#F4F1EC' },
-  { id: 2, name: 'Biscuit', color: '#F4A261' },
-  { id: 3, name: 'Oreo', color: '#3C3A47' },
-  { id: 4, name: 'Patches', color: '#E3A36B' },
-  { id: 5, name: 'Smokey', color: '#A5ABB8' },
-  { id: 6, name: 'Luna', color: '#5B5470' },
-  { id: 7, name: 'Tofu', color: '#B8967A' },
-  { id: 8, name: 'Tiger', color: '#B88B5E' },
-  { id: 9, name: 'Peach', color: '#FFB36B' },
+  { id: 1, name: 'Mochi', color: '#FFFFFF' },
+  { id: 2, name: 'Biscuit', color: '#FF9D3D' },
+  { id: 3, name: 'Oreo', color: '#2F2C38' },
+  { id: 4, name: 'Patches', color: '#FFFFFF' },
+  { id: 5, name: 'Smokey', color: '#8FA3BF' },
+  { id: 6, name: 'Luna', color: '#211E29' },
+  { id: 7, name: 'Tofu', color: '#F6E7CF' },
+  { id: 8, name: 'Tiger', color: '#8B5E3C' },
+  { id: 9, name: 'Peach', color: '#F7B6C8' },
 ]
 
 export const PLAYER_COLORS = ['#FF9F80', '#B9A7F5', '#6FCFB0', '#F5C542', '#6BB4FF']
@@ -125,7 +125,7 @@ export function generate(difficulty: Difficulty): { puzzle: number[]; solution: 
   return { puzzle: best!.puzzle, solution: best!.solution }
 }
 
-const name = (d: number) => CATS[d - 1].name
+const name = (d: number) => `${CATS[d - 1].name} (${d})`
 
 /** Easiest deducible cell: naked single, then hidden single, else fewest-candidates cell. */
 export function findHint(board: number[], solution: number[]): Hint | null {

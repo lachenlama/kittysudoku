@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CATS, PLAYER_COLORS, type Difficulty, type PlayerInfo, type Snapshot } from './shared'
 import { playerId, useRoom } from './useRoom'
 import Board from './Board'
 import Cat from './Cat'
+import A2hs from './A2hs'
 
 const ls = {
   get: (k: string, d = '') => { try { return localStorage.getItem('kitty.' + k) ?? d } catch { return d } },
@@ -15,6 +16,17 @@ const DIFFS: { id: Difficulty; name: string; sub: string; cat: number }[] = [
 ]
 const EMOJI = ['💗', '😹', '🙀', '👏']
 const fmt = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
+const DESKTOP = '(min-width: 900px) and (pointer: fine)'
+
+function useDesktop() {
+  const [d, setD] = useState(() => matchMedia(DESKTOP).matches)
+  useEffect(() => {
+    const m = matchMedia(DESKTOP), f = () => setD(m.matches)
+    m.addEventListener('change', f)
+    return () => m.removeEventListener('change', f)
+  }, [])
+  return d
+}
 
 async function share(code: string) {
   const url = `${location.origin}/?room=${code}`
@@ -27,39 +39,27 @@ async function share(code: string) {
 export default function App() {
   const r = useRoom()
   const me = useMemo(playerId, [])
-  const [showNumbers, setShowNumbers] = useState(ls.get('nums') === '1')
-  const toggleNums = () => setShowNumbers(v => { ls.set('nums', v ? '0' : '1'); return !v })
+  const desktop = useDesktop()
   const urlRoom = (new URLSearchParams(location.search).get('room') || '').toUpperCase()
   const [auto, setAuto] = useState(!!(urlRoom && ls.get('name')))
   useEffect(() => { if (auto) r.join(urlRoom, ls.get('name'), ls.get('color', PLAYER_COLORS[0])) }, []) // eslint-disable-line
   useEffect(() => { if (r.error) setAuto(false) }, [r.error])
-  const iosBanner = useIosBanner()
 
   return (
-    <div className="app">
+    <div className={'app' + (desktop ? ' desk' : '')}>
       {r.snap ? (
-        <Room snap={r.snap} me={me} r={r} showNumbers={showNumbers} toggleNums={toggleNums} />
+        <Room snap={r.snap} me={me} r={r} desktop={desktop} />
       ) : auto ? (
         <div className="splash"><div className="bigcat"><Cat id={2} /></div><p>Finding your room…</p></div>
       ) : (
-        <Home r={r} urlRoom={urlRoom} showNumbers={showNumbers} toggleNums={toggleNums} />
+        <Home r={r} urlRoom={urlRoom} />
       )}
       {r.conn === 'down' && <div className="pill">Reconnecting…</div>}
-      {iosBanner.show && !r.snap && (
-        <div className="a2hs"><span>Add to Home Screen for full-screen play 🐾</span><button onClick={iosBanner.hide} aria-label="Dismiss">✕</button></div>
-      )}
     </div>
   )
 }
 
-function useIosBanner() {
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent)
-  const standalone = (navigator as unknown as { standalone?: boolean }).standalone || matchMedia('(display-mode: standalone)').matches
-  const [show, setShow] = useState(ios && !standalone && ls.get('a2hs') !== '1')
-  return { show, hide: () => { ls.set('a2hs', '1'); setShow(false) } }
-}
-
-function Home({ r, urlRoom, showNumbers, toggleNums }: { r: ReturnType<typeof useRoom>; urlRoom: string; showNumbers: boolean; toggleNums: () => void }) {
+function Home({ r, urlRoom }: { r: ReturnType<typeof useRoom>; urlRoom: string }) {
   const [name, setName] = useState(ls.get('name'))
   const [color, setColor] = useState(ls.get('color', PLAYER_COLORS[0]))
   const [code, setCode] = useState(urlRoom)
@@ -71,6 +71,7 @@ function Home({ r, urlRoom, showNumbers, toggleNums }: { r: ReturnType<typeof us
   const busy = r.conn === 'connecting'
   return (
     <div className="home">
+      <A2hs room={urlRoom} />
       <div className="logo">{[2, 1, 3].map((c, i) => <div key={c} className={'logocat l' + i}><Cat id={c} /></div>)}</div>
       <h1>Kitty Sudoku</h1>
       <p className="sub">Solve it together, one cat at a time 🐾</p>
@@ -92,18 +93,17 @@ function Home({ r, urlRoom, showNumbers, toggleNums }: { r: ReturnType<typeof us
         </div>
         {r.error && <p className="err">{r.error}</p>}
       </div>
-      <button className="link" onClick={toggleNums}>{showNumbers ? '☑' : '☐'} Show numbers on cats</button>
     </div>
   )
 }
 
-function Room({ snap, me, r, showNumbers, toggleNums }: { snap: Snapshot; me: string; r: ReturnType<typeof useRoom>; showNumbers: boolean; toggleNums: () => void }) {
+function Room({ snap, me, r, desktop }: { snap: Snapshot; me: string; r: ReturnType<typeof useRoom>; desktop: boolean }) {
   const p = snap.puzzle
   const [pk, setPk] = useState<number | null>(null) // startedAt when "play again" was pressed
   const picking = p.status === 'lobby' || (pk !== null && p.startedAt === pk)
   return (
     <>
-      {picking ? <Lobby snap={snap} me={me} r={r} /> : <Game snap={snap} me={me} r={r} showNumbers={showNumbers} toggleNums={toggleNums} onAgain={() => setPk(p.startedAt)} />}
+      {picking ? <Lobby snap={snap} me={me} r={r} /> : <Game snap={snap} me={me} r={r} desktop={desktop} onAgain={() => setPk(p.startedAt)} />}
       <div className="floats">
         {r.reacts.map(x => <span key={x.id} className="float" style={{ left: x.x + '%' }}>{x.emoji}</span>)}
       </div>
@@ -140,60 +140,109 @@ function Timer({ p, off }: { p: Snapshot['puzzle']; off: number }) {
   return <span className="timer">{fmt(end - p.startedAt)}</span>
 }
 
-function Game({ snap, me, r, showNumbers, toggleNums, onAgain }: { snap: Snapshot; me: string; r: ReturnType<typeof useRoom>; showNumbers: boolean; toggleNums: () => void; onAgain: () => void }) {
+// Paw Pad geometry (px): keys 52, gap 6, padding 10, bottom row 42 => 184 x 236
+const PAD_W = 184, PAD_H = 236, ARROW = 8
+type Pad = { cell: number; x: number; y: number; ax: number; up: boolean; notes: boolean }
+
+function Game({ snap, me, r, desktop, onAgain }: { snap: Snapshot; me: string; r: ReturnType<typeof useRoom>; desktop: boolean; onAgain: () => void }) {
   const p = snap.puzzle
   const [sel, setSel] = useState<number | null>(null)
   const [hl, setHl] = useState(0)
-  const [notes, setNotes] = useState(false)
+  const [notes, setNotes] = useState(ls.get('notes') === '1') // sticky per device
+  const [pad, setPad] = useState<Pad | null>(null)
   const [reactOpen, setReactOpen] = useState(false)
   const partner = snap.players.find(x => x.id !== me)
   const playing = p.status === 'playing'
 
-  useEffect(() => { setSel(null); setHl(0) }, [p.startedAt])
-  const pick = (i: number) => {
-    const n = sel === i ? null : i
-    setSel(n); setHl(0)
-    r.send({ type: 'select', cell: n })
+  useEffect(() => { setSel(null); setHl(0); setPad(null) }, [p.startedAt])
+  useEffect(() => { if (desktop || !playing) setPad(null) }, [desktop, playing])
+  useEffect(() => {
+    if (!pad) return
+    const down = (e: PointerEvent) => { if (!(e.target as Element).closest('.pad, .board')) setPad(null) }
+    const close = () => setPad(null)
+    document.addEventListener('pointerdown', down)
+    window.addEventListener('resize', close)
+    return () => { document.removeEventListener('pointerdown', down); window.removeEventListener('resize', close) }
+  }, [!pad]) // eslint-disable-line
+
+  const setSelected = (n: number | null) => { setSel(n); setHl(0); r.send({ type: 'select', cell: n }) }
+  const pick = (i: number, el: HTMLElement, long = false) => {
+    if (sel === i && !long) { setSelected(null); setPad(null); return }
+    setSelected(i)
+    if (desktop || !playing || p.givens[i]) return setPad(null)
+    const b = el.getBoundingClientRect(), cx = b.left + b.width / 2
+    const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat')) || 0
+    const up = b.top - PAD_H - ARROW >= top + 8
+    const x = Math.min(Math.max(cx - PAD_W / 2, 8), innerWidth - PAD_W - 8)
+    setPad({ cell: i, x, y: up ? b.top - PAD_H - ARROW : b.bottom + ARROW, ax: Math.min(Math.max(cx - x, 22), PAD_W - 22), up, notes: long || notes })
   }
+  const toggleNotes = (on: boolean) => { setNotes(on); ls.set('notes', on ? '1' : '0') }
+
   const selVal = sel !== null ? p.board[sel] : 0
   const hv = selVal || (sel === null ? hl : 0)
   const counts = useMemo(() => { const c = Array(10).fill(0); p.board.forEach(v => c[v]++); return c }, [p.board])
   const hintCell = r.hint && !p.board[r.hint.cell] && playing ? r.hint.cell : null
+  const canEdit = playing && sel !== null && !p.board[sel]
 
-  const tap = (v: number) => {
-    if (playing && sel !== null && !p.board[sel]) r.send({ type: notes ? 'note' : 'place', cell: sel, value: v })
-    else { setHl(h => (h === v && sel === null ? 0 : v)); if (sel !== null) { setSel(null); r.send({ type: 'select', cell: null }) } }
+  const place = (v: number, asNote: boolean) => r.send({ type: asNote ? 'note' : 'place', cell: sel!, value: v })
+  const erase = () => { if (playing && sel !== null && !p.givens[sel] && (p.board[sel] || p.notes[sel])) r.send({ type: 'erase', cell: sel }) }
+  // desktop keypad / keyboard: act on the selection, else highlight that cat everywhere
+  const key = (v: number, asNote: boolean) => {
+    if (canEdit) place(v, asNote)
+    else { setHl(h => (h === v && sel === null ? 0 : v)); if (sel !== null) setSelected(null) }
   }
-  const erase = () => { if (playing && sel !== null && !p.givens[sel]) r.send({ type: 'erase', cell: sel }) }
+  const hint = () => { if (playing && p.hintsLeft > 0) r.send({ type: 'hint' }) }
 
-  const cell = (v: number) => {
-    const left = 9 - counts[v]
-    return (
-      <button key={v} className={'pal' + (left <= 0 ? ' done' : '') + (hv === v ? ' on' : '')} disabled={left <= 0} onClick={() => tap(v)} aria-label={`${CATS[v - 1].name}, ${left} left`}>
-        <Cat id={v} />
-        <span className="badge">{left}</span>
-        {showNumbers && <b className="num">{v}</b>}
-      </button>
-    )
+  const kb = useRef<(e: KeyboardEvent) => void>(() => {})
+  kb.current = e => {
+    if (e.ctrlKey || e.metaKey || e.altKey || (e.target as Element).closest?.('input,textarea')) return
+    const d = /^(?:Digit|Numpad)(\d)$/.exec(e.code)?.[1]
+    const k = e.key.toLowerCase()
+    const mv = ({ arrowleft: -1, a: -1, arrowright: 1, d: 1, arrowup: -9, w: -9, arrowdown: 9, s: 9 } as Record<string, number>)[k]
+    if (d && d !== '0') key(+d, e.shiftKey || notes)
+    else if (d === '0' || k === 'backspace' || k === 'delete') erase()
+    else if (k === 'n') toggleNotes(!notes)
+    else if (k === 'h') hint()
+    else if (k === 'escape') { setSelected(null); setHl(0) }
+    else if (mv) {
+      const c = sel ?? 40, to = c + mv
+      if (sel === null) setSelected(40)
+      else if (to >= 0 && to < 81 && (Math.abs(mv) === 9 || ((c / 9) | 0) === ((to / 9) | 0))) setSelected(to)
+    } else return
+    e.preventDefault()
   }
+  useEffect(() => {
+    if (!desktop) return
+    const f = (e: KeyboardEvent) => kb.current(e)
+    window.addEventListener('keydown', f)
+    return () => window.removeEventListener('keydown', f)
+  }, [desktop])
 
-  return (
-    <div className="game">
-      <div className="top">
-        <button className="chip" onClick={() => share(snap.room)}>{snap.room}</button>
-        <Timer p={p} off={r.off} />
-        <div className="hearts" aria-label={`${p.lives} lives`}>
-          {Array.from({ length: 9 }, (_, i) => (
-            <span key={i + (i < p.lives ? 'a' : 'b')} className={'heart' + (i < p.lives ? '' : ' lost')}>{i < p.lives ? '❤️' : '🤍'}</span>
-          ))}
+  const hearts = (
+    <div className="hearts" aria-label={`${p.lives} lives`}>
+      {Array.from({ length: 9 }, (_, i) => (
+        <span key={i + (i < p.lives ? 'a' : 'b')} className={'heart' + (i < p.lives ? '' : ' lost')}>{i < p.lives ? '❤️' : '🤍'}</span>
+      ))}
+    </div>
+  )
+  const hintBtn = (
+    <button className="tool" disabled={!playing || p.hintsLeft <= 0} onClick={hint}>
+      <span>💡</span>Hint<em className="badge">{p.hintsLeft}</em>
+    </button>
+  )
+  const reactBtn = (
+    <div className="reactwrap">
+      <button className={'tool' + (reactOpen ? ' on' : '')} onClick={() => setReactOpen(o => !o)}><span>💗</span>React</button>
+      {reactOpen && (
+        <div className="reactpop">
+          {EMOJI.map(e => <button key={e} onClick={() => { r.send({ type: 'react', emoji: e }); setReactOpen(false) }}>{e}</button>)}
         </div>
-        <button className={'nums' + (showNumbers ? ' on' : '')} onClick={toggleNums} aria-label="Show numbers">123</button>
-        <Avatar pl={partner} />
-      </div>
-
-      <div className="spacer" />
-      <Board p={p} players={snap.players} me={me} sel={sel} hv={hv} showNumbers={showNumbers} hintCell={hintCell} wrong={r.wrong} onSelect={pick} />
-
+      )}
+    </div>
+  )
+  const board = (
+    <>
+      <Board p={p} players={snap.players} me={me} sel={sel} hv={hv} hintCell={hintCell} wrong={r.wrong} longPress={!desktop} onSelect={pick} />
       <div className="zone">
         {hintCell !== null && r.hint ? (
           <div className="bubble"><div className="bcat"><Cat id={r.hint.value} /></div><span>{r.hint.reason}</span></div>
@@ -201,27 +250,83 @@ function Game({ snap, me, r, showNumbers, toggleNums, onAgain }: { snap: Snapsho
           <div className="muted" onClick={() => share(snap.room)}>Tap the room code to invite your partner 🐾</div>
         ) : null}
       </div>
+    </>
+  )
+  const chip = <button className="chip" onClick={() => share(snap.room)}>{snap.room}</button>
 
-      <div className="tools">
-        <button className={'tool' + (notes ? ' on' : '')} onClick={() => setNotes(n => !n)}><span>✏️</span>Notes</button>
-        <button className="tool" onClick={erase}><span>🧽</span>Erase</button>
-        <button className="tool" disabled={!playing || p.hintsLeft <= 0} onClick={() => r.send({ type: 'hint' })}>
-          <span>🔮</span>Wise Cat<em className="badge">{p.hintsLeft}</em>
-        </button>
-        <div className="reactwrap">
-          <button className={'tool' + (reactOpen ? ' on' : '')} onClick={() => setReactOpen(o => !o)}><span>💗</span>React</button>
-          {reactOpen && (
-            <div className="reactpop">
-              {EMOJI.map(e => <button key={e} onClick={() => { r.send({ type: 'react', emoji: e }); setReactOpen(false) }}>{e}</button>)}
-            </div>
-          )}
+  return (
+    <div className={'game' + (desktop ? ' desk' : '')}>
+      {desktop ? (
+        <>
+          <header className="dhead">
+            <span className="word">🐾 Kitty Sudoku</span>
+            <span className="dright">{chip}<Timer p={p} off={r.off} /></span>
+          </header>
+          <div className="dmain">
+            <div className="dleft">{board}</div>
+            <aside className="side">
+              {hearts}
+              <ul className="plist">
+                {snap.players.map(x => (
+                  <li key={x.id}><i className="dot" style={{ background: x.color }} />{x.name}{x.id === me ? ' (you)' : ''}<em className={x.online ? 'on' : ''}>{x.online ? 'online' : 'away'}</em></li>
+                ))}
+              </ul>
+              <div className="keypad">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(v => {
+                  const left = 9 - counts[v]
+                  return (
+                    <div key={v} className="kcol">
+                      <button className={'key' + (left <= 0 ? ' done' : '') + (hv === v ? ' on' : '')} disabled={left <= 0} onClick={() => key(v, notes)} aria-label={`${CATS[v - 1].name} (${v}), ${left} left`}>
+                        <Cat id={v} /><b className="num">{v}</b>
+                      </button>
+                      <small>{left} left</small>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="sbtns">
+                <button className={'tool' + (notes ? ' on' : '')} onClick={() => toggleNotes(!notes)}><span>✏️</span>Notes</button>
+                <button className="tool" onClick={erase}><span>🧽</span>Erase</button>
+                {hintBtn}
+                {reactBtn}
+              </div>
+              <p className="legend"><b>1–9</b> place · <b>⇧ 1–9</b> note · <b>N</b> notes mode · <b>←↑↓→ / WASD</b> move · <b>⌫</b> erase · <b>H</b> hint · <b>Esc</b> deselect</p>
+            </aside>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="top">
+            {chip}
+            <Timer p={p} off={r.off} />
+            {hearts}
+            <Avatar pl={partner} />
+          </div>
+          <div className="spacer" />
+          {board}
+          <div className="tools">{hintBtn}{reactBtn}</div>
+        </>
+      )}
+
+      {pad && (
+        <div className={'pad ' + (pad.up ? 'up' : 'down')} style={{ left: pad.x, top: pad.y, width: PAD_W, height: PAD_H, '--ax': pad.ax + 'px' } as React.CSSProperties} role="dialog" aria-label="Paw Pad">
+          <div className="pkeys">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(v => {
+              const done = !pad.notes && counts[v] >= 9
+              return (
+                <button key={v} className={'pkey' + (done ? ' done' : '')} disabled={done || !!p.board[pad.cell]} aria-label={`${CATS[v - 1].name} (${v})`}
+                  onClick={() => { place(v, pad.notes); if (!pad.notes) setPad(null) }}>
+                  <Cat id={v} /><b className="num">{v}</b>
+                </button>
+              )
+            })}
+          </div>
+          <div className="prow2">
+            <button className={'ptool' + (pad.notes ? ' on' : '')} onClick={() => { toggleNotes(!pad.notes); setPad({ ...pad, notes: !pad.notes }) }}>✏️ Notes</button>
+            <button className="ptool" disabled={!(p.board[pad.cell] || p.notes[pad.cell])} onClick={() => { erase(); setPad(null) }}>🧽 Erase</button>
+          </div>
         </div>
-      </div>
-
-      <div className="palette">
-        <div className="prow">{[1, 2, 3, 4, 5].map(cell)}</div>
-        <div className="prow">{[6, 7, 8, 9].map(cell)}</div>
-      </div>
+      )}
 
       {p.status === 'won' && <Win snap={snap} onAgain={onAgain} />}
       {p.status === 'lost' && (
