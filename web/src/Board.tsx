@@ -1,6 +1,33 @@
-import { useRef, type CSSProperties } from 'react'
-import { CATS, type PlayerInfo, type PuzzleState } from './shared'
+import { useMemo, useRef, type CSSProperties } from 'react'
+import { CATS, type Cage, type PlayerInfo, type PuzzleState } from './shared'
 import Cat from './Cat'
+
+const D = 0.075 // dashed cage line inset, in cell units (~3 px on a phone, ~5 px on desktop)
+/** Dashed outline of every cage as SVG path data in cell units (board = 9x9), inset D inside the cage. */
+function cagePath(cages: Cage[]): string {
+  const own: number[] = Array(81).fill(-1)
+  cages.forEach((c, k) => c.cells.forEach(i => (own[i] = k)))
+  const at = (r: number, c: number) => (r < 0 || c < 0 || r > 8 || c > 8 ? -2 : own[r * 9 + c])
+  let d = ''
+  for (let i = 0; i < 81; i++) {
+    const r = (i / 9) | 0, c = i % 9, k = own[i]
+    for (const [nr, nc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      if (at(r + nr, c + nc) === k) continue
+      const tr = nr ? 0 : 1, tc = nr ? 1 : 0 // tangent along the edge
+      // end offsets: convex corner pulls in by D, concave pushes out by D, straight continues
+      const off = (sgn: number) => {
+        const ar = r + sgn * tr, ac = c + sgn * tc
+        return at(ar, ac) !== k ? D : at(ar + nr, ac + nc) === k ? -D : 0
+      }
+      const a = off(-1), b = off(1)
+      const line = nr ? r + (nr < 0 ? D : 1 - D) : c + (nc < 0 ? D : 1 - D)
+      const s = nr ? c : r
+      const [x0, y0, x1, y1] = nr ? [s + a, line, s + 1 - b, line] : [line, s + a, line, s + 1 - b]
+      d += `M${x0.toFixed(3)} ${y0.toFixed(3)}L${x1.toFixed(3)} ${y1.toFixed(3)}`
+    }
+  }
+  return d
+}
 
 type Props = {
   p: PuzzleState
@@ -21,8 +48,11 @@ export default function Board({ p, players, me, sel, hv, hintCell, wrong, longPr
   const sr = sel === null ? -1 : (sel / 9) | 0
   const sc = sel === null ? -1 : sel % 9
   const stop = () => clearTimeout(lp.current.t)
+  const hat = (id: string) => players.find(x => x.id === id)?.hat || ''
+  const cageD = useMemo(() => (p.cages ? cagePath(p.cages) : ''), [p.cages])
+  const sums = useMemo(() => new Map((p.cages ?? []).map(c => [Math.min(...c.cells), c.sum])), [p.cages])
   return (
-    <div className="board">
+    <div className={'board v-' + p.variant}>
       {p.board.map((v, i) => {
         const r = (i / 9) | 0, c = i % 9
         const peer = sel !== null && (r === sr || c === sc || (((r / 3) | 0) === ((sr / 3) | 0) && ((c / 3) | 0) === ((sc / 3) | 0)))
@@ -30,6 +60,8 @@ export default function Board({ p, players, me, sel, hv, hintCell, wrong, longPr
         const cls = ['cell']
         if (c % 3 === 2 && c < 8) cls.push('bR')
         if (r % 3 === 2 && r < 8) cls.push('bB')
+        if (p.variant === 'diagonal' && (r === c || r + c === 8)) cls.push('dg')
+        if (sums.has(i)) cls.push('hassum')
         if (p.givens[i]) cls.push('given')
         if (peer) cls.push('peer')
         if (hv && v === hv) cls.push('same')
@@ -58,11 +90,12 @@ export default function Board({ p, players, me, sel, hv, hintCell, wrong, longPr
           >
             {pt && <span className="tag" style={{ background: pt.color }}>{pt.name}</span>}
             {pt && <span className="pglow" />}
+            {sums.has(i) && <span className="csum">{sums.get(i)}</span>}
             {isWrong ? (
               <span className="face pop"><Cat id={wrong!.value} hiss /></span>
             ) : v ? (
               <>
-                <span className={'face' + (p.givens[i] ? '' : ' pop')} key={v}><Cat id={v} /></span>
+                <span className={'face' + (p.givens[i] ? '' : ' pop')} key={v}><Cat id={v} hat={p.givens[i] ? '' : hat(p.by[i])} /></span>
                 <b className={'num' + (p.givens[i] ? '' : ' pl')} style={p.givens[i] ? undefined : { background: color(p.by[i]) || '#ddd' }}>{v}</b>
               </>
             ) : nm ? (
@@ -76,6 +109,10 @@ export default function Board({ p, players, me, sel, hv, hintCell, wrong, longPr
           </button>
         )
       })}
+      {p.variant === 'diagonal' && (
+        <svg className="ov" viewBox="0 0 9 9" preserveAspectRatio="none" aria-hidden="true"><path className="dline" d="M0 0L9 9M9 0L0 9" /></svg>
+      )}
+      {cageD && <svg className="ov" viewBox="0 0 9 9" preserveAspectRatio="none" aria-hidden="true"><path className="cline" d={cageD} /></svg>}
     </div>
   )
 }

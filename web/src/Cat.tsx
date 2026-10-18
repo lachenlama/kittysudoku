@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 
 // "Kawaii sticker" cats, shared geometry, per-cat palette. See docs/superpowers/specs/2026-10-19-kitty-v2-design.md
 const HEAD = 'M50 26 C76 26 92 39 92 59 C92 80 73 91 50 91 C27 91 8 80 8 59 C8 39 24 26 50 26Z'
@@ -22,7 +22,68 @@ const P: Spec[] = [
 ]
 const INK = '#231A1E'
 
-export default function Cat({ id, hiss = false }: { id: number; hiss?: boolean }) {
+// Accessories, drawn in the same 100x100 space as the head (head top y=26, ears reach y~8). ids match HATS in shared.
+const hs = { strokeLinejoin: 'round', strokeLinecap: 'round' } as const
+const HAT_SVG: Record<string, ReactNode> = {
+  bow: (
+    <g transform="rotate(-16 20 31)" fill="#FF5C8A" stroke="#D93A68" strokeWidth="1.4" {...hs}>
+      <path d="M20 31 L6 22 Q2 31 6 40Z" />
+      <path d="M20 31 L34 22 Q38 31 34 40Z" />
+      <circle cx="20" cy="31" r="4.3" fill="#FF86A8" />
+    </g>
+  ),
+  flower: (
+    <g {...hs}>
+      <path d="M26 34 Q50 17 74 34" stroke="#4FAE62" strokeWidth="3.4" fill="none" />
+      {[[33, 29.5, '#FF9EC0'], [50, 25.5, '#FFFFFF'], [67, 29.5, '#FF9EC0']].map(([x, y, c]) => (
+        <g key={x as number}><circle cx={x as number} cy={y as number} r="5.4" fill={c as string} stroke="#E0709C" strokeWidth="1.2" /><circle cx={x as number} cy={y as number} r="2" fill="#FFD84D" /></g>
+      ))}
+    </g>
+  ),
+  party: (
+    <g transform="rotate(9 50 30)" {...hs}>
+      <path d="M36 31 L50 4 L64 31Z" fill="#7C9CFF" stroke="#4F6BD6" strokeWidth="1.6" />
+      <path d="M42 21 L58 21 M39.5 27 L60.5 27" stroke="#FFD93D" strokeWidth="2.8" />
+      <circle cx="50" cy="4.5" r="4" fill="#FF6F91" stroke="#D93A68" strokeWidth="1.2" />
+    </g>
+  ),
+  glasses: (
+    <g {...hs} stroke="#5B47D6" strokeWidth="2.8" fill="none">
+      <circle cx="35" cy="59" r="11.5" fill="rgba(170,215,255,.28)" />
+      <circle cx="65" cy="59" r="11.5" fill="rgba(170,215,255,.28)" />
+      <path d="M46.5 57.5 Q50 54.5 53.5 57.5 M23.5 56 L9 51 M76.5 56 L91 51" />
+    </g>
+  ),
+  witch: (
+    <g {...hs} fill="#3B2F5E" stroke="#241A3F" strokeWidth="1.6">
+      <path d="M36 29 Q43 14 47 7 Q50 2 57 4 Q52 8 55 16 Q59 23 64 29Z" />
+      <ellipse cx="50" cy="29" rx="31" ry="6.5" />
+      <path d="M39 23.5 Q50 28 61 23.5" stroke="#B48CFF" strokeWidth="4.4" fill="none" />
+      <rect x="46" y="23" width="8" height="6" rx="1.5" fill="#F6C945" stroke="#C99A1F" strokeWidth="1.2" />
+    </g>
+  ),
+  crown: (
+    <g {...hs}>
+      <path d="M33 32 L29 13 L41 22 L50 9 L59 22 L71 13 L67 32Z" fill="#F7C93B" stroke="#C99A1F" strokeWidth="1.8" />
+      <circle cx="50" cy="26.5" r="2.6" fill="#E8423F" /><circle cx="39" cy="28" r="1.8" fill="#4FA8FF" /><circle cx="61" cy="28" r="1.8" fill="#4FA8FF" />
+    </g>
+  ),
+  halo: (
+    <g fill="none" {...hs}>
+      <ellipse cx="50" cy="15" rx="15" ry="4.8" stroke="#FFF1A8" strokeWidth="7" opacity=".55" />
+      <ellipse cx="50" cy="15" rx="15" ry="4.8" stroke="#F7C93B" strokeWidth="3.4" />
+    </g>
+  ),
+  santa: (
+    <g {...hs}>
+      <path d="M27 31 Q27 12 47 9 Q67 6 79 24 L72 31Z" fill="#E8423F" stroke="#B02A2A" strokeWidth="1.6" />
+      <rect x="23" y="26" width="54" height="9" rx="4.5" fill="#fff" stroke="#E2D6D0" strokeWidth="1.4" />
+      <circle cx="79" cy="24" r="5.4" fill="#fff" stroke="#E2D6D0" strokeWidth="1.4" />
+    </g>
+  ),
+}
+
+export default function Cat({ id, hiss = false, hat = '' }: { id: number; hiss?: boolean; hat?: string }) {
   const clip = 'c' + useId().replace(/\W/g, '')
   const { fur, line, eye, dark } = P[id]
   const earL = id === 4 ? '#2F2C38' : id === 7 ? '#5B3D2E' : fur
@@ -121,6 +182,7 @@ export default function Cat({ id, hiss = false }: { id: number; hiss?: boolean }
         <path d="M43.5 71 Q46.75 75 50 71.5 Q53.25 75 56.5 71" stroke={mouth} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
       )}
       <path d="M18 66 L6 64 M18 71 L6 73 M82 66 L94 64 M82 71 L94 73" stroke={whisk} strokeWidth="1.5" strokeLinecap="round" opacity={light ? 1 : 0.45} />
+      {HAT_SVG[hat]}
     </svg>
   )
 }

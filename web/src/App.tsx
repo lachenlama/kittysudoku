@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CATS, PLAYER_COLORS, type Difficulty, type PlayerInfo, type Snapshot } from './shared'
+import { CATS, HATS, PLAYER_COLORS, type Difficulty, type PlayerInfo, type Snapshot, type Variant } from './shared'
 import { playerId, useRoom } from './useRoom'
 import Board from './Board'
 import Cat from './Cat'
@@ -9,11 +9,17 @@ const ls = {
   get: (k: string, d = '') => { try { return localStorage.getItem('kitty.' + k) ?? d } catch { return d } },
   set: (k: string, v: string) => { try { localStorage.setItem('kitty.' + k, v) } catch { /* private mode */ } },
 }
-const DIFFS: { id: Difficulty; name: string; sub: string; cat: number }[] = [
-  { id: 'lion', name: 'Lion', sub: 'Hard · 28 cats', cat: 2 },
-  { id: 'tiger', name: 'Tiger', sub: 'Expert · 25 cats', cat: 8 },
-  { id: 'panther', name: 'Panther', sub: 'Evil · fewest cats', cat: 6 },
+const DIFFS: { id: Difficulty; name: string; sub: [string, string]; cat: number }[] = [
+  { id: 'lion', name: 'Lion', sub: ['Hard · 28 cats', 'Hard · 10 cats'], cat: 2 },
+  { id: 'tiger', name: 'Tiger', sub: ['Expert · 25 cats', 'Expert · 4 cats'], cat: 8 },
+  { id: 'panther', name: 'Panther', sub: ['Evil · fewest cats', 'Evil · fewest cats'], cat: 6 },
 ]
+const VARIANTS: { id: Variant; label: string; name: string; tip: string }[] = [
+  { id: 'classic', label: 'Classic', name: 'Classic Cats', tip: 'Rows, columns and boxes' },
+  { id: 'diagonal', label: 'Diagonal', name: 'Diagonal Cats', tip: 'Both diagonals hold every cat too' },
+  { id: 'cages', label: 'Fish Cages', name: 'Fish Cages', tip: 'Cats in a dashed cage add up to its number' },
+]
+type SheetId = 'closet' | 'love' | null
 const EMOJI = ['💗', '😹', '🙀', '👏']
 const fmt = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
 const DESKTOP = '(min-width: 900px) and (pointer: fine)'
@@ -100,10 +106,17 @@ function Home({ r, urlRoom }: { r: ReturnType<typeof useRoom>; urlRoom: string }
 function Room({ snap, me, r, desktop }: { snap: Snapshot; me: string; r: ReturnType<typeof useRoom>; desktop: boolean }) {
   const p = snap.puzzle
   const [pk, setPk] = useState<number | null>(null) // startedAt when "play again" was pressed
+  const [sheet, setSheet] = useState<SheetId>(null)
+  const [hat, setHat] = useState(ls.get('hat')) // wanted hat; the server only honours it once the team has unlocked it
+  const mine = snap.players.find(x => x.id === me)
+  const wins = snap.team?.wins ?? 0
+  useEffect(() => { if (hat !== (mine?.hat ?? '')) r.send({ type: 'equip', hat }) }, [hat, wins, snap.players.length, mine?.hat]) // eslint-disable-line
   const picking = p.status === 'lobby' || (pk !== null && p.startedAt === pk)
   return (
     <>
-      {picking ? <Lobby snap={snap} me={me} r={r} /> : <Game snap={snap} me={me} r={r} desktop={desktop} onAgain={() => setPk(p.startedAt)} />}
+      {picking ? <Lobby snap={snap} me={me} r={r} open={setSheet} /> : <Game snap={snap} me={me} r={r} desktop={desktop} open={setSheet} onAgain={() => setPk(p.startedAt)} />}
+      {sheet === 'closet' && <Closet wins={wins} cur={mine?.hat ?? ''} onPick={h => { ls.set('hat', h); setHat(h) }} onClose={() => setSheet(null)} />}
+      {sheet === 'love' && <Love snap={snap} me={me} r={r} onClose={() => setSheet(null)} />}
       <div className="floats">
         {r.reacts.map(x => <span key={x.id} className="float" style={{ left: x.x + '%' }}>{x.emoji}</span>)}
       </div>
@@ -111,24 +124,55 @@ function Room({ snap, me, r, desktop }: { snap: Snapshot; me: string; r: ReturnT
   )
 }
 
-function Lobby({ snap, me, r }: { snap: Snapshot; me: string; r: ReturnType<typeof useRoom> }) {
+function Lobby({ snap, me, r, open }: { snap: Snapshot; me: string; r: ReturnType<typeof useRoom>; open: (s: SheetId) => void }) {
   const partner = snap.players.find(x => x.id !== me)
+  const t = snap.team
+  const [variant, setVariant] = useState<Variant>(() => (VARIANTS.find(v => v.id === ls.get('variant'))?.id ?? 'classic'))
+  const pickVariant = (v: Variant) => { setVariant(v); ls.set('variant', v) }
+  const dv = VARIANTS.find(v => v.id === snap.daily.variant)!
+  const cur = VARIANTS.find(v => v.id === variant)!
   return (
-    <div className="home">
-      <div className="roomcode" onClick={() => share(snap.room)}>
-        <small>Room code</small><b>{snap.room}</b><span>Tap to invite 💌</span>
+    <div className="lobby">
+      <div className="ltop">
+        <div className="roomcode" onClick={() => share(snap.room)}>
+          <small>Room code</small><b>{snap.room}</b><span>Tap to invite 💌</span>
+        </div>
+        <p className="sub">{partner ? <>{partner.name} {partner.online ? 'is here' : 'is away'} <i className="dot" style={{ background: partner.color }} /></> : 'Waiting for your partner to join…'}</p>
       </div>
-      <p className="sub">{partner ? <>{partner.name} {partner.online ? 'is here' : 'is away'} <i className="dot" style={{ background: partner.color }} /></> : 'Waiting for your partner to join…'}</p>
-      <h2>Pick a puzzle</h2>
-      <div className="diffs">
-        {DIFFS.map(d => (
-          <button key={d.id} className="diff" onClick={() => r.send({ type: 'new', difficulty: d.id })}>
-            <div className="dcat"><Cat id={d.cat} /></div>
-            <div><b>{d.name}</b><small>{d.sub}</small></div>
-          </button>
-        ))}
+      <div className="lmid">
+        <button className="daily" onClick={() => r.send({ type: 'daily' })}>
+          <span className="moon">🌙</span>
+          <span className="dtxt">
+            <b>Daily Panther</b>
+            <small>{t?.dailyDoneToday ? '✅ Done today — come back tomorrow' : 'Today: ' + dv.name}</small>
+          </span>
+          {!!t?.streak && <span className="streak">🔥 {t.streak}-day streak</span>}
+        </button>
+        <div className="seg" role="tablist">
+          {VARIANTS.map(v => <button key={v.id} role="tab" aria-selected={v.id === variant} className={v.id === variant ? 'on' : ''} onClick={() => pickVariant(v.id)}>{v.label}</button>)}
+        </div>
+        <p className="tip">{cur.tip}</p>
+        <div className="diffs">
+          {DIFFS.map(d => {
+            const best = t?.best[variant + '-' + d.id]
+            return (
+              <button key={d.id} className="diff" onClick={() => r.send({ type: 'new', difficulty: d.id, variant })}>
+                <div className="dcat"><Cat id={d.cat} /></div>
+                <div><b>{d.name}</b><small>{d.sub[variant === 'cages' ? 1 : 0]}</small></div>
+                {best !== undefined && <em className="best">Best {fmt(best)}</em>}
+              </button>
+            )
+          })}
+        </div>
       </div>
-      <button className="link" onClick={r.leave}>Leave room</button>
+      <div className="lbot">
+        {t && <p className="wins">🏆 {t.wins} puzzle{t.wins === 1 ? '' : 's'} solved together</p>}
+        <div className="lrow">
+          <button className="tool" onClick={() => open('closet')}><span>👗</span>Closet</button>
+          <button className="tool" onClick={() => open('love')}><span>💌</span>Note{snap.love.mine && <i className="ldot" />}</button>
+        </div>
+        <button className="link" onClick={r.leave}>Leave room</button>
+      </div>
     </div>
   )
 }
@@ -144,7 +188,7 @@ function Timer({ p, off }: { p: Snapshot['puzzle']; off: number }) {
 const PAD_W = 184, PAD_H = 236, ARROW = 8
 type Pad = { cell: number; x: number; y: number; ax: number; up: boolean; notes: boolean }
 
-function Game({ snap, me, r, desktop, onAgain }: { snap: Snapshot; me: string; r: ReturnType<typeof useRoom>; desktop: boolean; onAgain: () => void }) {
+function Game({ snap, me, r, desktop, open, onAgain }: { snap: Snapshot; me: string; r: ReturnType<typeof useRoom>; desktop: boolean; open: (s: SheetId) => void; onAgain: () => void }) {
   const p = snap.puzzle
   const [sel, setSel] = useState<number | null>(null)
   const [hl, setHl] = useState(0)
@@ -248,9 +292,14 @@ function Game({ snap, me, r, desktop, onAgain }: { snap: Snapshot; me: string; r
           <div className="bubble"><div className="bcat"><Cat id={r.hint.value} /></div><span>{r.hint.reason}</span></div>
         ) : !partner ? (
           <div className="muted" onClick={() => share(snap.room)}>Tap the room code to invite your partner 🐾</div>
+        ) : snap.love.partnerWrote && playing ? (
+          <div className="muted">💌 {partner.name} left you a note…</div>
         ) : null}
       </div>
     </>
+  )
+  const loveBtn = (
+    <button className="iconbtn" onClick={() => open('love')} aria-label="Love note">💌{snap.love.mine && <i className="ldot" />}</button>
   )
   const chip = <button className="chip" onClick={() => share(snap.room)}>{snap.room}</button>
 
@@ -289,6 +338,7 @@ function Game({ snap, me, r, desktop, onAgain }: { snap: Snapshot; me: string; r
                 <button className="tool" onClick={erase}><span>🧽</span>Erase</button>
                 {hintBtn}
                 {reactBtn}
+                <button className="tool wide" onClick={() => open('love')}><span>💌</span>Love note{snap.love.mine && <i className="ldot" />}</button>
               </div>
               <p className="legend"><b>1–9</b> place · <b>⇧ 1–9</b> note · <b>N</b> notes mode · <b>←↑↓→ / WASD</b> move · <b>⌫</b> erase · <b>H</b> hint · <b>Esc</b> deselect</p>
             </aside>
@@ -300,10 +350,10 @@ function Game({ snap, me, r, desktop, onAgain }: { snap: Snapshot; me: string; r
             {chip}
             <Timer p={p} off={r.off} />
             {hearts}
+            {loveBtn}
             <Avatar pl={partner} />
           </div>
-          <div className="spacer" />
-          {board}
+          <div className="mid">{board}</div>
           <div className="tools">{hintBtn}{reactBtn}</div>
         </>
       )}
@@ -328,14 +378,14 @@ function Game({ snap, me, r, desktop, onAgain }: { snap: Snapshot; me: string; r
         </div>
       )}
 
-      {p.status === 'won' && <Win snap={snap} onAgain={onAgain} />}
+      {p.status === 'won' && <Win snap={snap} me={me} onAgain={onAgain} />}
       {p.status === 'lost' && (
         <div className="overlay">
           <div className="sheet">
             <div className="bigcat"><Cat id={3} hiss /></div>
             <h2>The cats got grumpy 😾</h2>
             <p>Out of lives after {fmt(p.finishedAt - p.startedAt)}.</p>
-            <button className="btn primary" onClick={() => r.send({ type: 'new', difficulty: p.difficulty || 'lion' })}>Try again</button>
+            <button className="btn primary" onClick={() => r.send(p.daily ? { type: 'daily' } : { type: 'new', difficulty: p.difficulty || 'lion', variant: p.variant })}>Try again</button>
             <button className="link" onClick={onAgain}>Change difficulty</button>
           </div>
         </div>
@@ -354,19 +404,87 @@ function Avatar({ pl }: { pl?: PlayerInfo }) {
   )
 }
 
-function Win({ snap, onAgain }: { snap: Snapshot; onAgain: () => void }) {
-  const p = snap.puzzle
+function Win({ snap, me, onAgain }: { snap: Snapshot; me: string; onAgain: () => void }) {
+  const p = snap.puzzle, w = snap.win, t = snap.team
   const confetti = useMemo(() => Array.from({ length: 26 }, (_, i) => ({ i, x: Math.random() * 100, d: Math.random() * 1.5, s: 14 + Math.random() * 14 })), [])
+  const from = snap.players.find(x => x.id !== me)
+  const hat = HATS.find(h => h.id === w?.hat)
   return (
     <div className="overlay">
       {confetti.map(c => <span key={c.i} className="paw" style={{ left: c.x + '%', animationDelay: c.d + 's', fontSize: c.s }}>🐾</span>)}
-      <div className="sheet">
+      <div className="sheet win">
         <div className="dance">{CATS.map((c, i) => <div key={c.id} style={{ animationDelay: i * 0.08 + 's' }}><Cat id={c.id} /></div>)}</div>
         <h2>Purrfect! 🎉</h2>
         <p>{snap.players.map(x => x.name).join(' & ')} solved it</p>
         <p className="stats"><b>{fmt(p.finishedAt - p.startedAt)}</b> · {p.lives} ❤️ left</p>
+        {w?.streakUp && t && <p className="perk">🔥 streak +1! {t.streak} day{t.streak === 1 ? '' : 's'} in a row</p>}
+        {w?.newBest && <p className="perk">⏱️ New best time!</p>}
+        {hat && <p className="perk">🎁 New in the closet: {hat.name}!</p>}
+        {snap.love.partner && from && <Envelope from={from.name} text={snap.love.partner} />}
         <button className="btn primary" onClick={onAgain}>Play again</button>
       </div>
     </div>
+  )
+}
+
+function Envelope({ from, text }: { from: string; text: string }) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setOpen(true), 900); return () => clearTimeout(t) }, [])
+  return (
+    <div className={'envwrap' + (open ? ' open' : '')}>
+      <button className="env" onClick={() => setOpen(o => !o)} aria-label={'Note from ' + from}>
+        <i className="eflap" /><i className="ebody" /><span className="eheart">💗</span>
+      </button>
+      <div className="paper"><div><small>A note from {from}</small><p>{text}</p></div></div>
+    </div>
+  )
+}
+
+function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="overlay sheetwrap" onClick={onClose}>
+      <div className="bsheet" onClick={e => e.stopPropagation()} role="dialog" aria-label={title}>
+        <h2>{title}</h2>
+        {children}
+        <button className="link" onClick={onClose}>Close</button>
+      </div>
+    </div>
+  )
+}
+
+const CLOSET_CATS = [1, 2, 4, 7, 9, 5, 8, 3]
+function Closet({ wins, cur, onPick, onClose }: { wins: number; cur: string; onPick: (h: string) => void; onClose: () => void }) {
+  return (
+    <Sheet title="👗 Cat closet" onClose={onClose}>
+      <p className="tip">Win puzzles together to unlock outfits. Your cats wear it on the board!</p>
+      <div className="closet">
+        {HATS.map((h, i) => {
+          const locked = wins < h.wins
+          return (
+            <button key={h.id} className={'hatt' + (cur === h.id ? ' on' : '') + (locked ? ' locked' : '')} disabled={locked} onClick={() => onPick(h.id)}>
+              <div className="hcat"><Cat id={CLOSET_CATS[i]} hat={h.id} /></div>
+              <b>{h.name}</b>
+              <small>{locked ? `Win ${h.wins} puzzle${h.wins === 1 ? '' : 's'}` : h.emoji}</small>
+            </button>
+          )
+        })}
+      </div>
+      <button className={'btn' + (cur === '' ? ' primary' : '')} onClick={() => onPick('')}>No outfit</button>
+    </Sheet>
+  )
+}
+
+function Love({ snap, me, r, onClose }: { snap: Snapshot; me: string; r: ReturnType<typeof useRoom>; onClose: () => void }) {
+  const partner = snap.players.find(x => x.id !== me)
+  const [text, setText] = useState(snap.love.mine)
+  const save = (t: string) => { r.send({ type: 'love', text: t }); onClose() }
+  return (
+    <Sheet title="💌 Love note" onClose={onClose}>
+      <p className="tip">Leave a note for {partner?.name ?? 'your partner'} — they'll see it when you solve this one</p>
+      <textarea value={text} maxLength={140} rows={3} placeholder="You're my favorite cat…" onChange={e => setText(e.target.value)} />
+      <small className="count">{text.length}/140</small>
+      <button className="btn primary" onClick={() => save(text)}>{text.trim() ? 'Save note' : 'Clear note'}</button>
+      {snap.love.mine && <button className="link" onClick={() => save('')}>Remove my note</button>}
+    </Sheet>
   )
 }
