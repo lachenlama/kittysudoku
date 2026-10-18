@@ -22,7 +22,7 @@ A cute, logic-first sudoku where digits are cats. Two players, each on their own
 - Shared state: givens, placements, notes, lives, hints left, timer start, status.
 - Presence: partner's selected cell shows a glowing rounded outline in their color + tiny name tag; partner online/offline dot in the top bar.
 - **9 shared lives**: server checks each placement against the solution. Wrong → cell shakes, cat shows a hiss face for 600 ms, cell cleared, one life lost (heart pops). 0 lives → "The cats got grumpy" screen with *Try again* (new puzzle, same difficulty).
-- **Wise Cat hints** (3 per puzzle, shared): server finds the easiest deducible cell (naked single, then hidden single) and returns `{cell, value, reason}`. Both phones highlight the cell + speech bubble e.g. "Only 🐱 Mochi fits in this row." The hint is **not** auto-placed; a player must place it.
+- **Wise Cat hints** (3 per puzzle, shared): server finds the easiest deducible cell (naked single, then hidden single) and returns `{cell, value, reason}`. Both phones highlight the cell + speech bubble e.g. "Only 🐱 Mochi fits in this row." The hint is **not** auto-placed; a player must place it. If no single exists (possible on Tiger), the hint reveals the empty cell with the fewest candidates and reason "The Wise Cat just knows… 🔮".
 - **Reactions**: 💗 😹 🙀 👏 float up on the partner's screen.
 - **Win**: cats dance (CSS bounce), paw confetti, shows time, lives left, both names. *Play again* → difficulty picker, stays in room.
 - Notes are shared (both see each other's notes) — simpler and more collaborative.
@@ -42,7 +42,7 @@ Accounts, streaks/history, daily puzzle, undo, sound settings, >2 players, persi
 | Zone | Height | Content |
 |---|---|---|
 | Safe top | 59 | — |
-| Top bar | 52 | room code chip · timer · 9 hearts (2 rows of mini hearts on 9×9 is avoided: hearts are 14 px, single row) · partner dot+avatar |
+| Top bar | 52 | room code chip · timer · 9 hearts (14 px, single row) · partner dot+avatar |
 | Board | 361 | 16 px side gutters → 361 px square. 9×9 cells ≈ 40 px, 6×6 cells ≈ 60 px |
 | Gap | 16 | Wise Cat speech bubble appears here when active |
 | Tool row | 56 | Notes (toggle), Erase, Wise Cat (badge = hints left), React |
@@ -58,7 +58,7 @@ Controls (palette + tools) sit in the bottom thumb zone; the board is mid-screen
 - Highlighting: selected cell (strong), its row/col/box (faint tint), all cells with the same cat (soft ring).
 - Given cells: cat on a slightly darker cushion, not editable. Player-placed cats have a small colored dot of the placer's color.
 - `touch-action: manipulation` on everything (no double-tap zoom); `user-select: none`; `-webkit-tap-highlight-color: transparent`; no text inputs on the game screen. The home screen name/code inputs use 16 px font (prevents iOS zoom).
-- Haptics: iOS Safari has no Vibration API; skipped. Feedback is visual + optional sound (off by default in v1 → no sound at all in v1).
+- Haptics: iOS Safari has no Vibration API; skipped. No sound in v1. All feedback is visual.
 - Motion: placement pop (scale 0.6→1, 180 ms spring), wrong shake (300 ms), heart pop, win dance. All disabled under `prefers-reduced-motion`.
 
 ### Visual style
